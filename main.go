@@ -30,14 +30,15 @@ func (e *TaskError) Error() string {
 
 func main() {
 	var (
-		message  string
-		taskDone int
-
-		list bool
+		message      string
+		taskDone     int
+		taskToDelete int
+		list         bool
 	)
 	flag.StringVar(&message, "a", "", "Create new task")
 	flag.BoolVar(&list, "l", false, "List tasks")
 	flag.IntVar(&taskDone, "u", 0, "Set task done")
+	flag.IntVar(&taskToDelete, "d", 0, "Delete task")
 	flag.Parse()
 
 	file, err := OpenDatabase()
@@ -67,6 +68,13 @@ func main() {
 			log.Fatalf("%v\n", err)
 		}
 		fmt.Println("Task marked as done!")
+	}
+	if taskToDelete != 0 {
+		err = deleteTask(file, taskToDelete)
+		if err != nil {
+			log.Fatalf("%v\n", err)
+		}
+		fmt.Println("Task deleted!")
 	}
 }
 
@@ -200,6 +208,63 @@ func setTaskDone(database *os.File, id int) error {
 		taskID, _ := strconv.Atoi(line[0])
 		if taskID == id {
 			lines[i][3] = "true"
+			found = true
+			break
+		}
+	}
+	if !found {
+		return &TaskError{Code: "NotFound", Msg: fmt.Sprintf("task with id %v not found", id)}
+	}
+
+	// Truncate and write updated lines
+	err = database.Truncate(0)
+	if err != nil {
+		return &TaskError{Code: "TruncateError", Msg: fmt.Sprintf("error truncating file %v", err)}
+	}
+	_, err = database.Seek(0, 0)
+	if err != nil {
+		return &TaskError{Code: "SeekError", Msg: fmt.Sprintf("error seeking to start of file %v", err)}
+	}
+
+	writer := csv.NewWriter(database)
+	for _, line := range lines {
+		if err := writer.Write(line); err != nil {
+			return &TaskError{Code: "CSVWriteError", Msg: fmt.Sprintf("error writing csv %v", err)}
+		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return &TaskError{Code: "CSVWriteError", Msg: fmt.Sprintf("error flushing csv %v", err)}
+	}
+
+	return nil
+}
+
+func deleteTask(database *os.File, id int) error {
+	// Positioning cursor to start of file
+	_, err := database.Seek(0, 0)
+	if err != nil {
+		return &TaskError{Code: "SeekError", Msg: fmt.Sprintf("error seeking to start of file %v", err)}
+	}
+
+	var lines [][]string
+	reader := csv.NewReader(database)
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return &TaskError{Code: "CSVReadError", Msg: fmt.Sprintf("error reading csv %v", err)}
+		}
+		lines = append(lines, record)
+	}
+
+	var found bool
+	for i, line := range lines {
+		taskID, _ := strconv.Atoi(line[0])
+		if taskID == id {
+			lines = append(lines[:i], lines[i+1:]...)
 			found = true
 			break
 		}

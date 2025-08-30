@@ -178,8 +178,10 @@ func listTasks(database *os.File) error {
 	)
 
 	for _, line := range lines {
+		dateTime, _ := time.Parse(time.RFC3339, line[2])
+		dateTimeFormatted := dateTime.Format("15:04:05 02/01/06")
 		writer.Write(
-			[]byte(fmt.Sprintf("%v\t%v\t%v\t%v\n", line[0], line[1], line[2], line[3])),
+			[]byte(fmt.Sprintf("%v\t%v\t%v\t%v\n", line[0], line[1], dateTimeFormatted, line[3])),
 		)
 	}
 

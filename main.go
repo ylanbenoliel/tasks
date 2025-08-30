@@ -43,7 +43,7 @@ func main() {
 
 	file, err := OpenDatabase()
 	if err != nil {
-		log.Fatalf("Error open database %v", err)
+		log.Fatalf("%v\n", err)
 	}
 	defer file.Close()
 
@@ -58,7 +58,7 @@ func main() {
 	if list {
 		err = listTasks(file)
 		if err != nil {
-			log.Fatalf("Error task list %v\n", err)
+			log.Fatalf("%v\n", err)
 		}
 	}
 
@@ -80,14 +80,23 @@ func main() {
 
 func OpenDatabase() (*os.File, error) {
 	file, err := os.OpenFile("db.csv", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
-	return file, err
+	if err != nil {
+		return nil, &TaskError{
+			Code: "DatabaseError",
+			Msg:  fmt.Sprintf("error opening database %v", err),
+		}
+	}
+	return file, nil
 }
 
 func addTask(database *os.File, message string) error {
 	// Positioning cursor to start of file
 	_, err := database.Seek(0, 0)
 	if err != nil {
-		return fmt.Errorf("error seeking to start of file %v", err)
+		return &TaskError{
+			Code: "SeekError",
+			Msg:  fmt.Sprintf("error seeking start of file %v", err),
+		}
 	}
 
 	reader := csv.NewReader(database)
@@ -100,7 +109,10 @@ func addTask(database *os.File, message string) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("error reading csv %v", err)
+			return &TaskError{
+				Code: "CSVReadError",
+				Msg:  fmt.Sprintf("error reading csv %v", err),
+			}
 		}
 		lastLine = record
 	}
@@ -118,7 +130,10 @@ func addTask(database *os.File, message string) error {
 
 	_, err = database.Seek(0, 2)
 	if err != nil {
-		return fmt.Errorf("error seeking end of file %v", err)
+		return &TaskError{
+			Code: "SeekError",
+			Msg:  fmt.Sprintf("error seeking start of file %v", err),
+		}
 	}
 
 	var line = []string{
@@ -131,34 +146,27 @@ func addTask(database *os.File, message string) error {
 
 	err = writer.Write(line)
 	if err != nil {
-		return fmt.Errorf("error writing record %v", err)
+		return &TaskError{
+			Code: "CSVWriteError",
+			Msg:  fmt.Sprintf("error writing task %v", err),
+		}
 	}
 
 	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("error writing new task %v", err)
+	if err = writer.Error(); err != nil {
+		return &TaskError{
+			Code: "CSVWriteError",
+			Msg:  fmt.Sprintf("error flushing csv %v", err),
+		}
 	}
+
 	return nil
 }
 
 func listTasks(database *os.File) error {
-	// Positioning cursor to start of file
-	_, err := database.Seek(0, 0)
+	lines, err := readAllTasks(database)
 	if err != nil {
-		return fmt.Errorf("error seeking to start of file %v", err)
-	}
-
-	var lines [][]string
-	reader := csv.NewReader(database)
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("error reading csv %v", err)
-		}
-		lines = append(lines, record)
+		return err
 	}
 
 	writer := tabwriter.NewWriter(
@@ -177,30 +185,19 @@ func listTasks(database *os.File) error {
 
 	err = writer.Flush()
 	if err != nil {
-		return fmt.Errorf("error getting tasks %v", err)
+		return &TaskError{
+			Code: "OSWriterError",
+			Msg:  fmt.Sprintf("error printing tasks %v", err),
+		}
 	}
 
 	return nil
 }
 
 func setTaskDone(database *os.File, id int) error {
-	// Positioning cursor to start of file
-	_, err := database.Seek(0, 0)
+	lines, err := readAllTasks(database)
 	if err != nil {
-		return &TaskError{Code: "SeekError", Msg: fmt.Sprintf("error seeking to start of file %v", err)}
-	}
-
-	var lines [][]string
-	reader := csv.NewReader(database)
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return &TaskError{Code: "CSVReadError", Msg: fmt.Sprintf("error reading csv %v", err)}
-		}
-		lines = append(lines, record)
+		return err
 	}
 
 	var found bool
@@ -216,48 +213,17 @@ func setTaskDone(database *os.File, id int) error {
 		return &TaskError{Code: "NotFound", Msg: fmt.Sprintf("task with id %v not found", id)}
 	}
 
-	// Truncate and write updated lines
-	err = database.Truncate(0)
-	if err != nil {
-		return &TaskError{Code: "TruncateError", Msg: fmt.Sprintf("error truncating file %v", err)}
-	}
-	_, err = database.Seek(0, 0)
-	if err != nil {
-		return &TaskError{Code: "SeekError", Msg: fmt.Sprintf("error seeking to start of file %v", err)}
-	}
-
-	writer := csv.NewWriter(database)
-	for _, line := range lines {
-		if err := writer.Write(line); err != nil {
-			return &TaskError{Code: "CSVWriteError", Msg: fmt.Sprintf("error writing csv %v", err)}
-		}
-	}
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return &TaskError{Code: "CSVWriteError", Msg: fmt.Sprintf("error flushing csv %v", err)}
+	if err = writeAllTasks(database, lines); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func deleteTask(database *os.File, id int) error {
-	// Positioning cursor to start of file
-	_, err := database.Seek(0, 0)
+	lines, err := readAllTasks(database)
 	if err != nil {
-		return &TaskError{Code: "SeekError", Msg: fmt.Sprintf("error seeking to start of file %v", err)}
-	}
-
-	var lines [][]string
-	reader := csv.NewReader(database)
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return &TaskError{Code: "CSVReadError", Msg: fmt.Sprintf("error reading csv %v", err)}
-		}
-		lines = append(lines, record)
+		return err
 	}
 
 	var found bool
@@ -273,25 +239,74 @@ func deleteTask(database *os.File, id int) error {
 		return &TaskError{Code: "NotFound", Msg: fmt.Sprintf("task with id %v not found", id)}
 	}
 
-	// Truncate and write updated lines
-	err = database.Truncate(0)
+	if err = writeAllTasks(database, lines); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func readAllTasks(database *os.File) ([][]string, error) {
+	_, err := database.Seek(0, 0)
 	if err != nil {
-		return &TaskError{Code: "TruncateError", Msg: fmt.Sprintf("error truncating file %v", err)}
+		return nil, &TaskError{
+			Code: "SeekError",
+			Msg:  fmt.Sprintf("error seeking to start of file %v", err),
+		}
+	}
+
+	var lines [][]string
+	reader := csv.NewReader(database)
+	reader.Comma = ';'
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, &TaskError{
+				Code: "CSVReadError",
+				Msg:  fmt.Sprintf("error reading csv %v", err),
+			}
+		}
+		lines = append(lines, record)
+	}
+	return lines, nil
+}
+
+func writeAllTasks(database *os.File, lines [][]string) error {
+	err := database.Truncate(0)
+	if err != nil {
+		return &TaskError{
+			Code: "TruncateError",
+			Msg:  fmt.Sprintf("error truncate file %v", err),
+		}
 	}
 	_, err = database.Seek(0, 0)
 	if err != nil {
-		return &TaskError{Code: "SeekError", Msg: fmt.Sprintf("error seeking to start of file %v", err)}
+		return &TaskError{
+			Code: "SeekError",
+			Msg:  fmt.Sprintf("error seeking start of file %v", err),
+		}
 	}
 
 	writer := csv.NewWriter(database)
+	writer.Comma = ';'
 	for _, line := range lines {
-		if err := writer.Write(line); err != nil {
-			return &TaskError{Code: "CSVWriteError", Msg: fmt.Sprintf("error writing csv %v", err)}
+		if err = writer.Write(line); err != nil {
+			return &TaskError{
+				Code: "CSVWriteError",
+				Msg:  fmt.Sprintf("error writing csv %v", err),
+			}
 		}
 	}
+
 	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return &TaskError{Code: "CSVWriteError", Msg: fmt.Sprintf("error flushing csv %v", err)}
+	if err = writer.Error(); err != nil {
+		return &TaskError{
+			Code: "CSVWriteError",
+			Msg:  fmt.Sprintf("error flushing csv %v", err),
+		}
 	}
 
 	return nil

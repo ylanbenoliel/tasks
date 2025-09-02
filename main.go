@@ -143,6 +143,7 @@ func addTask(database *os.File, message string) error {
 		strconv.FormatBool(task.done)}
 
 	writer := csv.NewWriter(database)
+	writer.Comma = ';'
 
 	err = writer.Write(line)
 	if err != nil {

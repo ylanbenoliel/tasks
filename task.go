@@ -11,20 +11,20 @@ import (
 )
 
 type Task struct {
-	message     string
-	createdAt   time.Time
-	completedAt *time.Time
-	done        bool
+	Message     string
+	CreatedAt   time.Time
+	CompletedAt *time.Time
+	Done        bool
 }
 
 type Tasks []Task
 
 func (tasks *Tasks) add(message string) {
 	task := Task{
-		message:     message,
-		done:        false,
-		createdAt:   time.Now(),
-		completedAt: nil,
+		Message:     message,
+		Done:        false,
+		CreatedAt:   time.Now(),
+		CompletedAt: nil,
 	}
 	*tasks = append(*tasks, task)
 }
@@ -56,13 +56,13 @@ func (tasks *Tasks) toggle(index int) error {
 		return err
 	}
 
-	done := t[index].done
+	done := t[index].Done
 	if !done {
 		completionTime := time.Now()
-		t[index].completedAt = &completionTime
+		t[index].CompletedAt = &completionTime
 	}
 
-	t[index].done = !done
+	t[index].Done = !done
 
 	return nil
 }
@@ -76,13 +76,13 @@ func (tasks *Tasks) print() {
 		done := "❌"
 		completedAt := ""
 
-		if t.done {
+		if t.Done {
 			done = "✅"
-			if t.completedAt != nil {
-				completedAt = t.completedAt.Format("15:04 02/01/06")
+			if t.CompletedAt != nil {
+				completedAt = t.CompletedAt.Format("15:04 02/01/06")
 			}
 		}
-		table.AddRow(strconv.Itoa(i), t.message, done, t.createdAt.Format("15:04 02/01/06"), completedAt)
+		table.AddRow(strconv.Itoa(i), t.Message, done, t.CreatedAt.Format("15:04 02/01/06"), completedAt)
 	}
 
 	table.Render()

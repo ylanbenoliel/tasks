@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 )
 
@@ -20,7 +19,6 @@ func (s *Storage[T]) Save(data T) error {
 		return err
 	}
 
-	fmt.Printf("%+v", data)
 	return os.WriteFile(s.FileName, fileData, 0644)
 }
 

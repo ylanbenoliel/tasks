@@ -3,7 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
+
+	"github.com/aquasecurity/table"
 )
 
 type Task struct {
@@ -61,4 +65,25 @@ func (tasks *Tasks) toggle(index int) error {
 	t[index].done = !done
 
 	return nil
+}
+
+func (tasks *Tasks) print() {
+	table := table.New(os.Stdout)
+
+	table.SetRowLines(false)
+	table.SetHeaders("#", "Message", "Done", "Created at", "Completed at")
+	for i, t := range *tasks {
+		done := "❌"
+		completedAt := ""
+
+		if t.done {
+			done = "✅"
+			if t.completedAt != nil {
+				completedAt = t.completedAt.Format("15:04 02/01/06")
+			}
+		}
+		table.AddRow(strconv.Itoa(i), t.message, done, t.createdAt.Format("15:04 02/01/06"), completedAt)
+	}
+
+	table.Render()
 }
